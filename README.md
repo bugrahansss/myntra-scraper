@@ -90,6 +90,8 @@ Product columns: `product_id, name, brand, price_inr, mrp_inr, discount_pct, rat
 1. returns 401 without the cookies a page visit sets (`at`, `_abck`, `bm_sz` and others), and
 2. ignores `p` and `o` as well, unless the request carries a `pagination-context` header. Every API response returns a new `pagination-context` header; sending it back moves to the next 50.
 
+Not every visit hands out a usable session: in our tests roughly one visit in four came back with a single cookie, and the API answered 401 to it. The scraper repeats the visit until Myntra's `at` cookie is there, and gets fresh cookies if the API still says 401.
+
 So `get_listing(max_pages=N)` visits the listing once for its cookies, then calls the search API N times, passing the cursor from each response to the next request (Scrape.do forwards the cookie and cursor headers with `extraHeaders=true`). In our test, four API pages returned 200 distinct products.
 
 **Listing price vs size price.** A listing card has one price. On the product page every size lists its sellers, each with its own price and stock count. On a Levi's T-shirt listed at ₹389, sizes M and XL had a seller at ₹389 while sizes S and L were only available from a second seller at ₹402. The `sizes` rows keep that split.
@@ -98,7 +100,7 @@ So `get_listing(max_pages=N)` visits the listing once for its cookies, then call
 
 - **One location.** Prices and stock are what Myntra shows without a delivery pincode.
 - **Credits.** `max_pages=1` reads the listing HTML (1 credit). More pages cost one page visit plus one credit per API page.
-- **Errors.** Non-200 responses raise `ScrapeError` with the status code. A 200 without Myntra's data (an Akamai page) is treated as a failure. Server errors, 429s and empty pages are retried twice; client errors are not.
+- **Errors.** Non-200 responses raise `ScrapeError` with the status code; `from_target` tells a Myntra status from a Scrape.do one (a wrong token is a Scrape.do 401). A 200 without Myntra's data (an Akamai page) is treated as a failure. Server errors, 429s and empty pages are retried twice; client errors are not.
 
 ## Responsible use
 

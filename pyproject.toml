@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "myntra-scraper"
-version = "0.1.0"
+version = "0.1.1"
 description = "Scrape Myntra listings (price, MRP, discount, rating) with real pagination, and product pages (price and stock per size and seller) with Python."
 readme = "README.md"
 requires-python = ">=3.8"
