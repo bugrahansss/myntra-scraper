@@ -175,6 +175,33 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(calls[1].kwargs["headers"]["sd-Cookie"], "at=abc; bm_sz=x")
         self.assertEqual(calls[1].kwargs["params"]["extraHeaders"], "true")
 
+    def test_session_needs_the_at_cookie(self):
+        s, session = self.scraper(
+            FakeResponse(200, LISTING, headers={"scrape.do-cookies": "bm_sz=x"}),
+            FakeResponse(200, LISTING, headers={"scrape.do-cookies": "_d_id=1; at=abc"}),
+            FakeResponse(200, body=api_page([11], has_next=False), headers={"pagination-context": "C"}),
+        )
+        self.assertEqual(len(s.get_listing(LIST_URL, max_pages=2)), 1)
+        self.assertEqual(session.get.call_args_list[2].kwargs["headers"]["sd-Cookie"], "_d_id=1; at=abc")
+
+    def test_myntra_401_refreshes_the_session(self):
+        myntra_401 = FakeResponse(401, headers={"scrape.do-initial-status-code": "401"})
+        s, session = self.scraper(
+            FakeResponse(200, LISTING, headers={"scrape.do-cookies": "at=old"}),
+            myntra_401,
+            FakeResponse(200, LISTING, headers={"scrape.do-cookies": "at=new"}),
+            FakeResponse(200, body=api_page([11], has_next=False), headers={"pagination-context": "C"}),
+        )
+        self.assertEqual([r["product_id"] for r in s.get_listing(LIST_URL, max_pages=2)], [11])
+        self.assertEqual(session.get.call_args_list[3].kwargs["headers"]["sd-Cookie"], "at=new")
+
+    def test_scrapedo_401_is_a_token_error(self):
+        s, _ = self.scraper(FakeResponse(401))
+        with self.assertRaises(ScrapeError) as ctx:
+            s.fetch(LIST_URL)
+        self.assertFalse(ctx.exception.from_target)
+        self.assertIn("token", str(ctx.exception))
+
     def test_get_product(self):
         s, _ = self.scraper(FakeResponse(200, PRODUCT))
         self.assertEqual(s.get_product("90000001")["units_in_stock"], 55)
