@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "myntra-scraper"
+version = "0.1.0"
+description = "Scrape Myntra listings (price, MRP, discount, rating) with real pagination, and product pages (price and stock per size and seller) with Python."
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Buğrahan Saka" }]
+keywords = ["myntra", "web scraping", "fashion", "ecommerce", "scraper", "akamai", "india"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+]
+dependencies = ["requests>=2.25"]
+
+[project.urls]
+Homepage = "https://github.com/bugrahansss/myntra-scraper"
+Source = "https://github.com/bugrahansss/myntra-scraper"
+Issues = "https://github.com/bugrahansss/myntra-scraper/issues"
+"Scrape.do" = "https://scrape.do/?utm_source=pypi&utm_medium=package&utm_campaign=myntra-scraper"
+
+[project.scripts]
+myntra-scraper = "myntra_scraper.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
