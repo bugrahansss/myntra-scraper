@@ -38,6 +38,10 @@ def _has_page_data(response: requests.Response) -> bool:
     return bool(extract_myx(response.text))
 
 
+def _has_session_cookie(cookies: str) -> bool:
+    return any(part.strip().startswith("at=") for part in (cookies or "").split(";"))
+
+
 def _is_json(response: requests.Response) -> bool:
     try:
         return isinstance(response.json(), dict)
@@ -46,11 +50,17 @@ def _is_json(response: requests.Response) -> bool:
 
 
 class ScrapeError(RuntimeError):
-    """Raised when a page cannot be fetched."""
+    """Raised when a page cannot be fetched.
 
-    def __init__(self, message: str, status_code: Optional[int] = None):
+    ``from_target`` is True when the status came from Myntra (Scrape.do reports it in the
+    ``scrape.do-initial-status-code`` header) and False when Scrape.do refused the request,
+    for example a 401 for a wrong token.
+    """
+
+    def __init__(self, message: str, status_code: Optional[int] = None, from_target: bool = False):
         super().__init__(message)
         self.status_code = status_code
+        self.from_target = from_target
 
 
 def search_api_url(listing_url: str, page: int) -> str:
@@ -120,8 +130,12 @@ class MyntraScraper:
                     if attempt < self.retries:
                         time.sleep(2 * (attempt + 1))
                     continue
+                from_target = "scrape.do-initial-status-code" in {k.lower() for k in response.headers}
+                if response.status_code == 401 and not from_target:
+                    raise ScrapeError("Scrape.do rejected the token (401): it is wrong or out of credits.", 401)
+                who = "Myntra" if from_target else "Scrape.do"
                 last_error = ScrapeError(
-                    f"Request for {url} failed with status {response.status_code}", response.status_code
+                    f"{who} returned {response.status_code} for {url}", response.status_code, from_target
                 )
                 # Client errors (bad token, bad URL, expired session) will not fix themselves
                 if 400 <= response.status_code < 500 and response.status_code != 429:
@@ -137,10 +151,18 @@ class MyntraScraper:
 
     # -------------------------------------------------------------------- listing
 
-    def open_session(self, listing_url: str) -> Tuple[str, str]:
-        """Visit the listing page once: returns (html, cookie header) for the search API."""
-        response = self.request(listing_url, valid=_has_page_data)
-        return response.text, response.headers.get("scrape.do-cookies", "")
+    def open_session(self, listing_url: str, attempts: int = 4) -> Tuple[str, str]:
+        """Visit the listing page: returns (html, cookie header) for the search API.
+
+        Some visits come back with a single cookie, and the search API answers 401 to that
+        session, so the visit is repeated until Myntra's ``at`` cookie is there."""
+        html, cookies = "", ""
+        for _ in range(max(1, attempts)):
+            response = self.request(listing_url, valid=_has_page_data)
+            html, cookies = response.text, response.headers.get("scrape.do-cookies", "")
+            if _has_session_cookie(cookies):
+                break
+        return html, cookies
 
     def search_page(self, listing_url: str, page: int, cookies: str, cursor: str = "") -> Tuple[Dict[str, Any], str]:
         """One page of the search API: (JSON body, cursor for the next page)."""
@@ -161,8 +183,19 @@ class MyntraScraper:
         _, cookies = self.open_session(url)
         rows: Dict[Any, dict] = {}
         cursor = ""
-        for page in range(1, max_pages + 1):
-            body, cursor = self.search_page(url, page, cookies, cursor)
+        refreshes = 0
+        page = 1
+        while page <= max_pages:
+            try:
+                body, cursor = self.search_page(url, page, cookies, cursor)
+            except ScrapeError as exc:
+                # Myntra answers 401 when it doesn't accept the session: get fresh cookies, retry the page.
+                if exc.from_target and exc.status_code == 401 and refreshes < 2:
+                    refreshes += 1
+                    _, cookies = self.open_session(url)
+                    continue
+                raise
+            page += 1
             new = parse_products(body.get("products") or [])
             for row in new:
                 rows.setdefault(row["product_id"], row)
